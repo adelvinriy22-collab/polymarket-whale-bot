@@ -1,1 +1,1 @@
-worker: python whale_bot_railway_final.py
+worker: python whale_bot_final_fixed.py
