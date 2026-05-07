@@ -34,12 +34,12 @@ logger = logging.getLogger(__name__)
 class PolymarketWhaleBot:
     """Основний клас бота для моніторингу китів на Polymarket"""
     
-    def __init__(self, telegram_token: str):
+    def __init__(self, telegram_token: str, chat_id: str):
         """Ініціалізація бота"""
         self.token = telegram_token
         self.bot = Bot(token=telegram_token)
+        self.chat_id = chat_id  # ЧИТАЄМО З ЗМІННОЇ
         self.checked_bets = set()
-        self.chat_id = None
         self.running = True
         
         # Налаштування фільтрів
@@ -51,9 +51,6 @@ class PolymarketWhaleBot:
         
         # Ініціалізуємо БД
         self._init_database()
-        
-        # Завантажуємо збережений chat_id
-        self._load_saved_chat_id()
         
         logger.info("✅ Бот ініціалізований успішно")
     
@@ -105,39 +102,6 @@ class PolymarketWhaleBot:
             logger.info("✅ База даних ініціалізована")
         except Exception as e:
             logger.error(f"❌ Помилка ініціалізації БД: {e}")
-    
-    def _load_saved_chat_id(self):
-        """Завантажує збережений chat_id"""
-        try:
-            conn = sqlite3.connect("whale_bets.db")
-            cursor = conn.cursor()
-            cursor.execute('SELECT chat_id FROM bot_users LIMIT 1')
-            result = cursor.fetchone()
-            conn.close()
-            
-            if result:
-                self.chat_id = result[0]
-                logger.info(f"📨 Знайдено збережений chat_id: {self.chat_id}")
-        except Exception as e:
-            logger.error(f"❌ Помилка завантаження chat_id: {e}")
-    
-    def _save_user(self, chat_id: str, username: str, first_name: str, last_name: str = ""):
-        """Зберігає користувача в БД"""
-        try:
-            conn = sqlite3.connect("whale_bets.db")
-            cursor = conn.cursor()
-            
-            cursor.execute('''
-                INSERT OR REPLACE INTO bot_users 
-                (chat_id, username, first_name, last_name)
-                VALUES (?, ?, ?, ?)
-            ''', (chat_id, username, first_name, last_name))
-            
-            conn.commit()
-            conn.close()
-            logger.info(f"✅ Користувач збережений: @{username} (ID: {chat_id})")
-        except Exception as e:
-            logger.error(f"❌ Помилка збереження користувача: {e}")
     
     async def send_telegram_message(self, message: str) -> bool:
         """Надсилає повідомлення в Telegram"""
@@ -353,14 +317,12 @@ class PolymarketWhaleBot:
         Головна функція моніторингу ринків
         Перевіряє ринки кожні 20 секунд і надсилає сповіщення про китів
         """
-        # Чекаємо поки користувач напише боту
-        while not self.chat_id:
-            logger.info("⏳ Чекаємо першого повідомлення від користувача...")
-            await asyncio.sleep(5)
-        
         logger.info("🚀 Запуск моніторингу китів на Polymarket...")
         logger.info(f"📊 Фільтри: Мін. оборот=${self.min_turnover}, Мін. сума=${self.min_trader_amount}")
         logger.info(f"⏱️  Інтервал перевірки: {interval}сек, Макс сповіщень/год: {self.max_notifications_per_hour}")
+        
+        # НАДСИЛАЄМО ПЕРШЕ ПОВІДОМЛЕННЯ
+        await self.send_telegram_message("✅ Бот активований! Моніторинг розпочато! 🚀🐋")
         
         check_count = 0
         
@@ -430,12 +392,11 @@ class PolymarketWhaleBot:
             logger.info(f"✅ Бот активований: @{bot_info.username}")
             
             logger.info("=" * 70)
-            logger.info("🐋 POLYMARKET WHALE BOT - ПРИВАТНИЙ ЧАТ")
+            logger.info("🐋 POLYMARKET WHALE BOT")
             logger.info("=" * 70)
             logger.info(f"✅ Бот готовий!")
-            logger.info(f"📱 Telegram Bot ID: 8645033199")
-            logger.info(f"📬 Видай команду: /start")
-            logger.info(f"💬 Чекаємо першого повідомлення...")
+            logger.info(f"📱 Chat ID: {self.chat_id}")
+            logger.info(f"🚀 Моніторинг запущено!")
             logger.info("=" * 70)
             
             # Запускаємо моніторинг
@@ -449,16 +410,22 @@ class PolymarketWhaleBot:
 async def main():
     """Головна функція"""
     
-    # Отримуємо токен з змінних середовища
+    # ЧИТАЄМО ОБИДВА З ЗМІННИХ СЕРЕДОВИЩА
     TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
+    CHAT_ID = os.getenv('CHAT_ID')
     
     if not TELEGRAM_TOKEN:
         logger.error("❌ ПОМИЛКА: TELEGRAM_TOKEN не встановлений!")
         logger.error("Встав TELEGRAM_TOKEN у змінні середовища Railway")
         return
     
-    # Створюємо і запускаємо бота
-    bot = PolymarketWhaleBot(TELEGRAM_TOKEN)
+    if not CHAT_ID:
+        logger.error("❌ ПОМИЛКА: CHAT_ID не встановлений!")
+        logger.error("Встав CHAT_ID у змінні середовища Railway")
+        return
+    
+    # ПЕРЕДАЄМО CHAT_ID ПРИ СТВОРЕННІ
+    bot = PolymarketWhaleBot(TELEGRAM_TOKEN, CHAT_ID)
     
     # Обробник сигналу для грамотного завершення
     def signal_handler(sig, frame):
